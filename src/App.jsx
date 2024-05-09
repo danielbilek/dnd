@@ -1,5 +1,14 @@
 import {useState} from "react";
-import {DndContext, useDraggable, useDroppable} from "@dnd-kit/core";
+import {
+  DndContext,
+  MouseSensor,
+  PointerSensor,
+  useDndContext,
+  useDraggable,
+  useDroppable,
+  useSensors
+} from "@dnd-kit/core";
+import {restrictToVerticalAxis} from "@dnd-kit/modifiers";
 
 
 function App() {
@@ -11,7 +20,6 @@ function App() {
     newDate.setHours(0, 0, 0, 0)
     dates.push(newDate)
   }
-  // console.log(dates)
 
   const [surgeries, setSurgery] = useState([
     {
@@ -24,7 +32,7 @@ function App() {
 
   const Card = ({surgery}) => {
     const {attributes, listeners, setNodeRef, transform} = useDraggable({
-      id: 'draggable',
+      id: `draggable-${surgery.id}`,
       data: surgery
     })
     const height = (surgery.to.getTime() - surgery.from.getTime()) / 1000 / 60 / 15 * 12
@@ -66,7 +74,17 @@ function App() {
   }
 
   const Column = ({date}) => {
-    return (<div className="flex-1 w-1/7" data-date={date}>
+    const ctx = useDndContext()
+    const onMouseEnter = () => {
+      const {active} = ctx
+      if (active) {
+        const surgeryDateFrom = active.data.current.from
+        const surgeryDateDiff = surgeryDateFrom.getTime() - date.getTime()
+        active.data.current.from = new Date(surgeryDateFrom.getTime() - surgeryDateDiff)
+        active.data.current.to = new Date(active.data.current.to.getTime() - surgeryDateDiff)
+      }
+    }
+    return (<div onMouseEnter={onMouseEnter} className="flex-1 w-1/7" data-date={date}>
 
       {[...Array(24)].map((_, hour) => {
         return (<div key={hour} className="relative w-full h-12 border-b height-min">
@@ -84,8 +102,8 @@ function App() {
     date.setMinutes((block) * 15)
     const matchedSurgeries = surgeries.filter(surgery => surgery.from.getTime() === date.getTime())
     const {isOver, setNodeRef} = useDroppable({
-      id: 'cell',
-      data: {date, hour, block}
+      id: `cell-${date}-${hour}-${block}`,
+      data: {date: `${date}`}
     })
 
     const style = {
@@ -100,7 +118,20 @@ function App() {
   }
 
   const onDragEnd = (event) => {
-    console.log(event)
+    const card = event.active
+    const cell = event.over
+
+    if (cell && card) {
+      const cellDate = new Date(cell.data.current.date)
+      const surgeryOriginalDateFrom = new Date(card.data.current.from)
+      const diff = cellDate.getTime() - surgeryOriginalDateFrom.getTime()
+      const surgeryUpdated = {
+        ...card.data.current,
+        from: new Date(card.data.current.from.getTime() + diff),
+        to: new Date(card.data.current.to.getTime() + diff),
+      }
+      setSurgery(surgeries.map(surgery => surgery.id === surgeryUpdated.id ? surgeryUpdated : surgery))
+    }
   }
 
 
@@ -123,7 +154,7 @@ function App() {
             <div className="min-w-14">
               <Timeline/>
             </div>
-            <DndContext onDragEnd={onDragEnd}>
+            <DndContext onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
               <div className="flex-auto w-full h-full border-l flex divide-x">
                 {dates.map((date, index) => {
                   return <Column key={index} date={date}/>
